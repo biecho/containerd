@@ -288,6 +288,9 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 
 	containerCreateTimer.WithValues(ociRuntime.Type).UpdateSince(start)
 
+	cntrr, err := c.client.ContainerService().Get(ctx, id)
+	log.G(ctx).Infof("cntrr: %+v", cntrr)
+
 	return &runtime.CreateContainerResponse{ContainerId: id}, nil
 }
 
