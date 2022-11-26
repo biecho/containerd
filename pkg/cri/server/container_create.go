@@ -49,19 +49,29 @@ func init() {
 
 // CreateContainer creates a new container in the given PodSandbox.
 func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateContainerRequest) (_ *runtime.CreateContainerResponse, retErr error) {
+	log.G(ctx).Debugf("CreateContainerRequest: %+v", r)
+
 	config := r.GetConfig()
 	log.G(ctx).Debugf("Container config %+v", config)
+
 	sandboxConfig := r.GetSandboxConfig()
+	log.G(ctx).Debugf("sandboxConfig: %+v", sandboxConfig)
+
 	sandbox, err := c.sandboxStore.Get(r.GetPodSandboxId())
 	if err != nil {
 		return nil, fmt.Errorf("failed to find sandbox id %q: %w", r.GetPodSandboxId(), err)
 	}
+	log.G(ctx).Debugf("sanbox: %+v", sandbox)
+
 	sandboxID := sandbox.ID
 	s, err := sandbox.Container.Task(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sandbox container task: %w", err)
 	}
 	sandboxPid := s.Pid()
+
+	log.G(ctx).Debugf("sanbox task: %+v", s)
+	log.G(ctx).Debugf("sandboxPid: %+v", sandbox)
 
 	// Generate unique id and name for the container and reserve the name.
 	// Reserve the container name to avoid concurrent `CreateContainer` request creating
@@ -71,6 +81,9 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 	if metadata == nil {
 		return nil, errors.New("container config must include metadata")
 	}
+
+	log.G(ctx).Debugf("conifg.Metadata(): %+v", metadata)
+
 	containerName := metadata.Name
 	name := makeContainerName(metadata, sandboxConfig.GetMetadata())
 	log.G(ctx).Debugf("Generated id %q for container %q", id, name)
@@ -92,6 +105,8 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		Config:    config,
 	}
 
+	log.G(ctx).Debugf("meta: %+v", meta)
+
 	// Prepare container image snapshot. For container, the image should have
 	// been pulled before creating the container, so do not ensure the image.
 	image, err := c.localResolve(config.GetImage().GetImage())
@@ -103,12 +118,17 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		return nil, fmt.Errorf("failed to get image from containerd %q: %w", image.ID, err)
 	}
 
+	log.G(ctx).Debugf("image: %+v", image)
+	log.G(ctx).Debugf("containerdImage: %+v", containerdImage)
+
 	start := time.Now()
 	// Run container using the same runtime with sandbox.
 	sandboxInfo, err := sandbox.Container.Info(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sandbox %q info: %w", sandboxID, err)
 	}
+
+	log.G(ctx).Debugf("sandboxInfo: %+v", sandboxInfo)
 
 	// Create container root directory.
 	containerRootDir := c.getContainerRootDir(id)
@@ -140,16 +160,22 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		}
 	}()
 
+	log.G(ctx).Debugf("containerRootDir: %s\n", containerRootDir)
+	log.G(ctx).Debugf("volatileContainerRootDir: %s\n", volatileContainerRootDir)
+
 	var volumeMounts []*runtime.Mount
 	if !c.config.IgnoreImageDefinedVolumes {
 		// Create container image volumes mounts.
 		volumeMounts = c.volumeMounts(containerRootDir, config.GetMounts(), &image.ImageSpec.Config)
+		log.G(ctx).Debugf("volumeMounts: %+v", volumeMounts)
 	} else if len(image.ImageSpec.Config.Volumes) != 0 {
 		log.G(ctx).Debugf("Ignoring volumes defined in image %v because IgnoreImageDefinedVolumes is set", image.ID)
 	}
 
 	// Generate container mounts.
 	mounts := c.containerMounts(sandboxID, config)
+
+	log.G(ctx).Debugf("mounts: %+v", mounts)
 
 	ociRuntime, err := c.getSandboxRuntime(sandboxConfig, sandbox.Metadata.RuntimeHandler)
 	if err != nil {
@@ -186,9 +212,12 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 	// Grab any platform specific snapshotter opts.
 	sOpts := snapshotterOpts(c.config.ContainerdConfig.Snapshotter, config)
 
+	runtimeSnapshotter := c.runtimeSnapshotter(ctx, ociRuntime)
+	log.G(ctx).Debugf("runtimeSnapshotter: %s\n", runtimeSnapshotter)
+
 	// Set snapshotter before any other options.
 	opts := []containerd.NewContainerOpts{
-		containerd.WithSnapshotter(c.runtimeSnapshotter(ctx, ociRuntime)),
+		containerd.WithSnapshotter(runtimeSnapshotter),
 		// Prepare container rootfs. This is always writeable even if
 		// the container wants a readonly rootfs since we want to give
 		// the runtime (runc) a chance to modify (e.g. to create mount
@@ -201,6 +230,7 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		for _, v := range volumeMounts {
 			mountMap[filepath.Clean(v.HostPath)] = v.ContainerPath
 		}
+		log.G(ctx).Debugf("mountMap: %+v", mountMap)
 		opts = append(opts, customopts.WithVolumes(mountMap))
 	}
 	meta.ImageRef = image.ID
@@ -236,14 +266,21 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 
 	containerLabels := buildLabels(config.Labels, image.ImageSpec.Config.Labels, containerKindContainer)
 
+	log.G(ctx).Debugf("specOpts: %+v", specOpts)
+	log.G(ctx).Debugf("containerLabels: %+v", specOpts)
+
+	effectiveRuntime := sandboxInfo.Runtime.Name
 	runtimeOptions, err := getRuntimeOptions(sandboxInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get runtime options: %w", err)
 	}
 
+	log.G(ctx).Debugf("runtime: %s\n", effectiveRuntime)
+	log.G(ctx).Debugf("runtimeOptions: %+v\n", runtimeOptions)
+
 	opts = append(opts,
 		containerd.WithSpec(spec, specOpts...),
-		containerd.WithRuntime(sandboxInfo.Runtime.Name, runtimeOptions),
+		containerd.WithRuntime(effectiveRuntime, runtimeOptions),
 		containerd.WithContainerLabels(containerLabels),
 		containerd.WithContainerExtension(containerMetadataExtension, &meta))
 	var cntr containerd.Container
@@ -267,6 +304,8 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		containerstore.WithContainer(cntr),
 		containerstore.WithContainerIO(containerIO),
 	)
+
+	log.G(ctx).Debugf("container: %+v", container)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create internal container object for %q: %w", id, err)
 	}
@@ -284,6 +323,7 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		return nil, fmt.Errorf("failed to add container %q into store: %w", id, err)
 	}
 
+	log.G(ctx).Debugf("ociRuntime.Type: %s\n", ociRuntime.Type)
 	containerCreateTimer.WithValues(ociRuntime.Type).UpdateSince(start)
 
 	return &runtime.CreateContainerResponse{ContainerId: id}, nil
