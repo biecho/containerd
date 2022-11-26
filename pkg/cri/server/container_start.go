@@ -46,6 +46,7 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 	if err != nil {
 		return nil, fmt.Errorf("an error occurred when try to find container %q: %w", r.GetContainerId(), err)
 	}
+	log.G(ctx).Debugf("cntr: %+v", cntr)
 
 	info, err := cntr.Container.Info(ctx)
 	if err != nil {
@@ -91,6 +92,9 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 		return nil, fmt.Errorf("sandbox container %q is not running", sandboxID)
 	}
 
+	log.G(ctx).Debugf("sandbox: %+v", sandbox)
+	log.G(ctx).Debugf("sanboxID: %s\n", sandboxID)
+
 	// Recheck target container validity in Linux namespace options.
 	if linux := config.GetLinux(); linux != nil {
 		nsOpts := linux.GetSecurityContext().GetNamespaceOptions()
@@ -121,6 +125,9 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sandbox runtime: %w", err)
 	}
+
+	log.G(ctx).Debugf("ctrInfo: %+v", ctrInfo)
+	log.G(ctx).Debugf("ociRuntime: %s\n", ociRuntime)
 
 	taskOpts := c.taskOpts(ctrInfo.Runtime.Name)
 	if ociRuntime.Path != "" {
@@ -176,6 +183,8 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 
 	// It handles the TaskExit event and update container state after this.
 	c.eventMonitor.startContainerExitMonitor(context.Background(), id, task.Pid(), exitCh)
+
+	log.G(ctx).Debugf("info.Runtime.Name: %s\n", info.Runtime.Name)
 
 	containerStartTimer.WithValues(info.Runtime.Name).UpdateSince(start)
 
