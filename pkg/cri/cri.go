@@ -60,9 +60,9 @@ func initCRIService(ic *plugin.InitContext) (interface{}, error) {
 		return nil, fmt.Errorf("invalid plugin config: %w", err)
 	}
 
-	ic.Address = "/run/firecracker-containerd/containerd.sock"
-	ic.Root = "/var/lib/firecracker-containerd/containerd"
-	ic.State = "/run/firecracker-containerd"
+	//ic.Address = "/run/firecracker-containerd/containerd.sock"
+	//ic.Root = "/var/lib/firecracker-containerd/containerd"
+	//ic.State = "/run/firecracker-containerd"
 
 	c := criconfig.Config{
 		PluginConfig:       *pluginConfig,
@@ -81,8 +81,8 @@ func initCRIService(ic *plugin.InitContext) (interface{}, error) {
 	client, err := containerd.New(
 		c.ContainerdEndpoint,
 		containerd.WithDefaultNamespace(constants.K8sContainerdNamespace),
-		//containerd.WithDefaultPlatform(platforms.Default()),
-		//containerd.WithInMemoryServices(ic),
+		containerd.WithDefaultPlatform(platforms.Default()),
+		containerd.WithInMemoryServices(ic),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create containerd client: %w", err)
