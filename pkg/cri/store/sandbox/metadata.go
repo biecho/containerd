@@ -19,9 +19,9 @@ package sandbox
 import (
 	"encoding/json"
 	"fmt"
-
 	cni "github.com/containerd/go-cni"
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
+	"os"
 )
 
 // NOTE(random-liu):
@@ -85,4 +85,11 @@ func (c *Metadata) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	return fmt.Errorf("unsupported version: %q", versioned.Version)
+}
+
+func (c *Metadata) DumpToFile(fileName string) {
+	marshalJson, err := c.MarshalJSON()
+	if err == nil {
+		_ = os.WriteFile(fileName, marshalJson, 0777)
+	}
 }

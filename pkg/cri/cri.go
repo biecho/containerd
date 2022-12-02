@@ -17,6 +17,7 @@
 package cri
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -67,7 +68,17 @@ func initCRIService(ic *plugin.InitContext) (interface{}, error) {
 		RootDir:            ic.Root,
 		StateDir:           ic.State,
 	}
+
+	c.Runtimes["aws.firecracker"] = criconfig.Runtime{
+		Type:        "aws.firecracker",
+		Snapshotter: "devmapper",
+		SandboxMode: "shim",
+		Options:     pluginConfig.Runtimes["runc"].Options,
+	}
+
 	log.G(ctx).Infof("Start cri plugin with config %+v", c)
+	configJson, err := json.Marshal(c)
+	fmt.Println(string(configJson))
 
 	if err := setGLogLevel(); err != nil {
 		return nil, fmt.Errorf("failed to set glog level: %w", err)

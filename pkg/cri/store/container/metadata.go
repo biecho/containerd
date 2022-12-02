@@ -19,6 +19,7 @@ package container
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
@@ -85,4 +86,11 @@ func (c *Metadata) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	return fmt.Errorf("unsupported version: %q", versioned.Version)
+}
+
+func (c *Metadata) DumpToFile(fileName string) {
+	marshalJson, err := c.MarshalJSON()
+	if err == nil {
+		_ = os.WriteFile(fileName, marshalJson, 0777)
+	}
 }

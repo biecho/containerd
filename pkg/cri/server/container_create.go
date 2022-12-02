@@ -53,6 +53,7 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 	log.G(ctx).Debugf("Container config %+v", config)
 	sandboxConfig := r.GetSandboxConfig()
 	sandbox, err := c.sandboxStore.Get(r.GetPodSandboxId())
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to find sandbox id %q: %w", r.GetPodSandboxId(), err)
 	}
@@ -285,6 +286,9 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 	}
 
 	containerCreateTimer.WithValues(ociRuntime.Type).UpdateSince(start)
+
+	fileName := fmt.Sprintf("/tmp/container_meta_%s.json", container.ID)
+	container.DumpToFile(fileName)
 
 	return &runtime.CreateContainerResponse{ContainerId: id}, nil
 }
